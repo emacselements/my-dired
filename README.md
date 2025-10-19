@@ -13,7 +13,7 @@ Enhanced Emacs Dired configuration with improved navigation, file operations, an
 
 ## Installation
 
-Add to your Emacs configuration:
+Add this to your Emacs configuration:
 
 ```elisp
 (add-to-list 'load-path "/path/to/my-dired")
