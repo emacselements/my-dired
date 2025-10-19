@@ -212,3 +212,5 @@ Reports number of items renamed."
 
 
 (provide 'my-dired)
+
+;; finis
