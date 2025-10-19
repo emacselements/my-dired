@@ -1,5 +1,5 @@
 ;; -*- lexical-binding: t; -*-
-;; Author: Rari Comninos
+;; Author: Raoul Comninos
 ;; my-dired.el --- My Dired settings
 
 (require 'dired)
