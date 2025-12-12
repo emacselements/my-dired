@@ -2,6 +2,8 @@
 ;; Author: Raoul Comninos
 ;; my-dired.el --- My Dired settings
 
+;;;;;;;;;;;;;;;; 
+
 (require 'dired)
 (require 'dired-x)
 
@@ -17,7 +19,7 @@
 
 (defun dired-back-to-top ()
 	(interactive)
-	(beginning-of-buffer)
+	(goto-char (point-min))
 	(dired-next-line 1))
 
 ; Replace normal "go to top" with "go to first file" (skip header line)
@@ -26,7 +28,7 @@
 
 (defun dired-jump-to-bottom ()
 	(interactive)
-	(end-of-buffer)
+	(goto-char (point-max))
 	(dired-next-line -1))
 
 ; Replace normal "go to bottom" with "go to last file" 
@@ -85,8 +87,9 @@
   (run-hooks 'my/wdired-before-finish-editing-hook))
 
 ;; Add advice to run the hook before finishing edits or aborting changes in `wdired`
-(advice-add #'wdired-finish-edit :before #'my/wdired-before-finish-editing-run-hook)
-(advice-add #'wdired-abort-changes :before #'my/wdired-before-finish-editing-run-hook)
+(with-eval-after-load 'wdired
+  (advice-add #'wdired-finish-edit :before #'my/wdired-before-finish-editing-run-hook)
+  (advice-add #'wdired-abort-changes :before #'my/wdired-before-finish-editing-run-hook))
 
 ;; Enable `highlight-changes-mode` when entering `wdired` mode
 (add-hook 'wdired-mode-hook (defun my/lambda-1693716265 ()
@@ -169,9 +172,8 @@ If DRY-RUN is non-nil, only print which directories would be deleted."
 
 ; Rename files/folders: replace spaces with dashes and make lowercase
 (defun dired-rename-spaces-to-dashes-lowercase ()
-  "Rename marked files or folders in Dired, replacing spaces with dashes and converting to lowercase.
-When a folder is selected, only renames the folder itself, not its contents.
-Reports number of items renamed."
+  "Rename marked files/folders, replacing spaces with dashes.
+Converts to lowercase. Only renames folders, not their contents."
   (interactive)
   (let ((items (dired-get-marked-files t))
         (rename-count 0))
@@ -185,7 +187,8 @@ Reports number of items renamed."
                             (if is-dir (directory-file-name full-path) full-path)))
                  (directory (file-name-directory 
                              (if is-dir (directory-file-name full-path) full-path)))
-                 (new-name (downcase (replace-regexp-in-string " " "-" old-name)))  ; Convert spaces to dashes, make lowercase
+                 (new-name (let ((temp (downcase (replace-regexp-in-string " +" "-" old-name))))
+                             (replace-regexp-in-string "-+" "-" temp)))  ; Convert spaces to dashes, collapse multiple dashes, make lowercase
                  (new-full-path (expand-file-name new-name directory)))
             (message "Debug: Item: %s (dir? %s)" old-name is-dir)
             (message "Debug: From: %s" full-path)
@@ -210,6 +213,113 @@ Reports number of items renamed."
 (with-eval-after-load 'dired
   (define-key dired-mode-map (kbd "N") 'dired-rename-spaces-to-dashes-lowercase))
 
+; Rename marked files to random names, preserving extensions
+(defun dired-rename-to-random ()
+  "Rename marked files to random names (10 chars: lowercase + digits).
+Preserves file extensions."
+  (interactive)
+  (let ((items (dired-get-marked-files t))
+        (rename-count 0))
+    (if (null items)
+        (message "No items marked for renaming")
+      (dolist (item items)
+        (when (and item (stringp item) (file-exists-p item))
+          (let* ((full-path (file-truename (expand-file-name item)))
+                 (is-dir (file-directory-p full-path))
+                 (old-name (file-name-nondirectory
+                            (if is-dir (directory-file-name full-path) full-path)))
+                 (directory (file-name-directory
+                             (if is-dir (directory-file-name full-path) full-path)))
+                 (extension (if is-dir "" (file-name-extension old-name t)))  ; Get extension with dot
+                 (new-name (concat (my-random-string 10) extension))
+                 (new-full-path (expand-file-name new-name directory)))
+            (message "Debug: Renaming %s to %s" old-name new-name)
+            ;; Keep trying until we find a unique name
+            (while (file-exists-p new-full-path)
+              (setq new-name (concat (my-random-string 10) extension))
+              (setq new-full-path (expand-file-name new-name directory)))
+            (condition-case err
+                (progn
+                  (if is-dir
+                      (dired-rename-file full-path new-full-path t)
+                    (rename-file full-path new-full-path t))
+                  (setq rename-count (+ 1 rename-count))
+                  (dired-relist-file new-full-path)
+                  (message "Debug: Renamed '%s' to '%s', count: %d"
+                           old-name new-name rename-count))
+              (error (message "Error renaming '%s' to '%s': %s"
+                              full-path new-full-path err))))))
+      (revert-buffer)
+      (message "Final count: %d item(s) renamed to random names" rename-count))))
+
+(defun my-random-string (length)
+  "Generate a random string of LENGTH characters (lowercase letters + digits)."
+  (let ((chars "abcdefghijklmnopqrstuvwxyz0123456789")
+        (result ""))
+    (dotimes (_ length)
+      (setq result (concat result (string (elt chars (random (length chars)))))))
+    result))
+
+;; Bind the random rename function to "V" key in Dired mode (replaces dired-do-run-mail)
+(with-eval-after-load 'dired
+  (define-key dired-mode-map (kbd "V") 'dired-rename-to-random))
+
+
+;; File Type Colors
+
+;; Customize dired faces to show different colors for file types
+(custom-set-faces
+ '(dired-symlink ((t (:foreground "#3b00a0")))))      ; Symlinks: purple #3b00a0
+
+;; Highlight executable files in orange using overlays
+;; This approach works with dired-hide-details-mode
+(defface dired-executable
+  '((t (:foreground "#b33376")))
+  "Face for executable files in dired."
+  :group 'dired-faces)
+
+(defun dired-highlight-executables ()
+  "Highlight executable files in green in dired using overlays."
+  (when (eq major-mode 'dired-mode)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (condition-case nil
+            (let* ((file (dired-get-filename nil t)))
+              (when (and file
+                         (file-exists-p file)
+                         (file-regular-p file)
+                         (not (file-symlink-p file))
+                         (file-executable-p file))
+                ;; Create an overlay for this line
+                (let ((ov (make-overlay (line-beginning-position)
+                                        (line-end-position))))
+                  (overlay-put ov 'face 'dired-executable)
+                  (overlay-put ov 'evaporate t))))  ; Auto-remove when text is deleted
+          (error nil))
+        (forward-line 1)))))
+
+;; Apply executable highlighting after dired loads
+(add-hook 'dired-after-readin-hook #'dired-highlight-executables)
+
+
+;; Mark Files Instead of Flagging for Deletion
+
+;; Rebind ~ and # to mark files (not flag for deletion)
+;; These mimic what % m ~ and % m # do - mark files matching pattern
+(defun my-dired-mark-backup-files ()
+  "Mark files containing ~ in their names."
+  (interactive)
+  (dired-mark-files-regexp "~"))
+
+(defun my-dired-mark-autosave-files ()
+  "Mark files containing # in their names."
+  (interactive)
+  (dired-mark-files-regexp "#"))
+
+;; Override the default keybindings immediately (dired is already loaded above)
+(define-key dired-mode-map "~" 'my-dired-mark-backup-files)
+(define-key dired-mode-map "#" 'my-dired-mark-autosave-files)
 
 (provide 'my-dired)
 
