@@ -62,6 +62,31 @@
   (define-key dired-mode-map (kbd "RET") 'my-dired-find-file))
 
 
+;; ;; Mouse Click Behavior
+
+;; (defun my-dired-mouse-visit (event)
+;;   "Visit file or directory at mouse EVENT in the same window."
+;;   (interactive "e")
+;;   (let ((window (posn-window (event-start event)))
+;;         (pos (posn-point (event-start event))))
+;;     (when (windowp window)
+;;       (select-window window)
+;;       (goto-char pos)
+;;       (my-dired-find-file))))
+
+;; ; Bind mouse clicks in dired and disable link-following behavior
+;; (with-eval-after-load 'dired
+;;   ;; Disable mouse-1-click-follows-link in dired to prevent mouse-1 -> mouse-2 translation
+;;   (add-hook 'dired-mode-hook
+;;             (lambda ()
+;;               (setq-local mouse-1-click-follows-link nil)))
+;;   ;; Bind both mouse-1 and mouse-2 (single and double) to open in-place
+;;   (define-key dired-mode-map [mouse-1] 'my-dired-mouse-visit)
+;;   (define-key dired-mode-map [mouse-2] 'my-dired-mouse-visit)
+;;   (define-key dired-mode-map [double-mouse-1] 'my-dired-mouse-visit)
+;;   (define-key dired-mode-map [double-mouse-2] 'my-dired-mouse-visit))
+
+
 
 ;; Directory Navigation
 
